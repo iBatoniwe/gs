@@ -63,7 +63,7 @@ SELECT lb, rb FROM gd_contact con
   
   BREMAINS = 0;
   
-  /*îñòàòîê íà íà÷àëî*/
+  /*остаток на начало*/
   FOR SELECT
     SUM ( M.DEBIT - M.CREDIT )
   FROM
@@ -84,7 +84,7 @@ SELECT lb, rb FROM gd_contact con
   BEGIN
   END
   
-  /*ïðèõîä çà ïåðèîä*/
+  /*приход за период*/
   
   FOR SELECT
     SUM (M.DEBIT)
@@ -109,7 +109,7 @@ SELECT lb, rb FROM gd_contact con
       INTAKE = 0;
   END
   
-  /*Èùåì Âîçâðàò îò ïîêóïàòåëåé*/
+  /*Ищем Возврат от покупателей*/
   FOR SELECT
     SUM (M.DEBIT)
   FROM
@@ -133,7 +133,7 @@ SELECT lb, rb FROM gd_contact con
       CUSTOMERBACK = 0;
   END
   
-  /*Èùåì ïðèõîä ïî èíâåíòàðèçàöèè*/
+  /*Ищем приход по инвентаризации*/
   FOR SELECT
     SUM (M.DEBIT)
   FROM
@@ -155,7 +155,7 @@ SELECT lb, rb FROM gd_contact con
       ININVENT = 0;
   END
   
-  /*Èùåì ðàñõîä çà ïåðèîä*/
+  /*Ищем расход за период*/
   FOR SELECT
     SUM (M.CREDIT)
   FROM
@@ -179,7 +179,7 @@ SELECT lb, rb FROM gd_contact con
       ALLOUTPAY = 0;
   END
   
-    /*Âîçâðàò ïîñòàâùèêó*/
+    /*Возврат поставщику*/
   FOR SELECT
     SUM (M.CREDIT)
    FROM
@@ -204,7 +204,7 @@ SELECT lb, rb FROM gd_contact con
        PROVIDERBACK = 0;
    END
    
-  /*Èùåì ðàñõîä ïî èíâåíòàðèçàöèè*/
+  /*Ищем расход по инвентаризации*/
   FOR SELECT
     SUM (M.CREDIT)
   FROM
@@ -226,7 +226,7 @@ SELECT lb, rb FROM gd_contact con
       OUTINVENT = 0;
   END
   
-  /*Èùåì îñòàòîê íà êîíåö*/
+  /*Ищем остаток на конец*/
   EREMAINS = 0;
   
   FOR SELECT
