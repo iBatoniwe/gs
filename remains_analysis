@@ -1,0 +1,268 @@
+EXECUTE BLOCK (
+  DEPOTKEY INTEGER = :depotkey,
+  FROMDATE DATE = :FROMDATE,
+  TODATE DATE = :TODATE,
+  ProviderKey INTEGER = :ProviderKey,
+  GoodGroup INTEGER = :GoodGroup,
+  CUSTOMERBACKDOC INTEGER = :CUSTOMERBACKDOCK,
+  INVENTDOC INTEGER = :INVENTDOC,
+  PROVIDERBACKDOC INTEGER = :PROVIDERBACKDOC
+)
+
+RETURNS (
+  GOODKEY INTEGER,
+  GOODNAME VARCHAR(200),
+  BREMAINS NUMERIC (15,4),
+  COLOR VARCHAR (30),
+  MEASURE VARCHAR(10),
+  INTAKE NUMERIC (15,4),
+  CUSTOMERBACK NUMERIC (15,4),
+  ININVENT NUMERIC (15,4),
+  ALLOUTPAY NUMERIC (15,4),
+  PROVIDERBACK NUMERIC (15,4),
+  OUTINVENT NUMERIC (15,4),
+  EREMAINS NUMERIC (15,4),
+  MINIVDATE DATE,
+  MAXINVDATE DATE
+)
+
+AS
+
+  DECLARE VARIABLE DEPOTLB INTEGER;
+  DECLARE VARIABLE DEPOTRB INTEGER;
+  DECLARE VARIABLE COLORKEY INTEGER;
+  
+BEGIN
+
+SELECT lb, rb FROM gd_contact con
+    WHERE con.ID = :depotkey
+    into :DepotLB, DepotRB;
+
+
+
+  FOR SELECT c.goodkey
+  , c.USR$COLORKEY
+  , col.USR$COLOR
+  , mes.USR$M
+  , GOOD.NAME
+  FROM
+    INV_CARD C
+      LEFT JOIN GD_GOOD G ON G.ID = C.GOODKEY
+      JOIN USR$COLORS COL ON COL.ID = C.USR$COLORKEY
+      JOIN USR$MEASURE MES ON MES.ID = C.USR$MEASUREKEY
+      LEFT JOIN GD_GOOD GOOD ON GOOD.ID = C.GOODKEY
+  WHERE
+    (c.usr$inv_provider = :ProviderKey) AND c.USR$COLORKEY IS NOT NULL
+  AND (G.GROUPKEY = :GoodGroup or :GoodGroup = -1)
+  GROUP BY c.goodkey, c.USR$COLORKEY, col.USR$COLOR, mes.USR$M, GOOD.NAME
+  INTO :GOODKEY, :COLORKEY, :COLOR, :MEASURE, :GOODNAME
+
+  DO
+
+  BEGIN
+  
+  BREMAINS = 0;
+  
+  /*îñòàòîê íà íà÷àëî*/
+  FOR SELECT
+    SUM ( M.DEBIT - M.CREDIT )
+  FROM
+    INV_CARD C
+      JOIN INV_MOVEMENT M ON C.ID  =  M.CARDKEY AND M.DISABLED  =  0   AND C.USR$COLORKEY = :COLORKEY
+      AND C.GOODKEY  =  :GOODKEY
+        AND M.MOVEMENTDATE  <  :FROMDATE
+        AND (c.usr$inv_provider = :ProviderKey or :ProviderKey = -1)
+      LEFT JOIN GD_CONTACT CON ON M.CONTACTKEY  =  CON.ID
+  WHERE
+     CON.LB  >=  :DEPOTLB AND CON.RB  <=  :DEPOTRB
+  HAVING
+    SUM ( M.DEBIT - M.CREDIT )  >  0
+  INTO :BREMAINS
+
+  DO
+  
+  BEGIN
+  END
+  
+  /*ïðèõîä çà ïåðèîä*/
+  
+  FOR SELECT
+    SUM (M.DEBIT)
+  FROM
+    INV_CARD C
+      JOIN INV_MOVEMENT M ON C.ID  =  M.CARDKEY AND M.DISABLED = 0
+        AND M.MOVEMENTDATE <= :TODATE AND M.MOVEMENTDATE  >=  :FROMDATE AND M.DEBIT > 0
+        AND C.GOODKEY  =  :GOODKEY AND C.USR$COLORKEY = :COLORKEY
+        AND (c.usr$inv_provider = :ProviderKey )
+      JOIN INV_MOVEMENT MOUT ON M.movementkey = MOUT.movementkey AND M.id <> mout.id AND mout.credit > 0 AND MOUT.DISABLED = 0
+      LEFT JOIN GD_CONTACT CON ON M.CONTACTKEY  =  CON.ID
+      LEFT JOIN GD_CONTACT CONOUT ON MOUT.CONTACTKEY  =  CONOUT.ID
+  WHERE
+    CON.LB  >=  :DEPOTLB AND CON.RB  <=  :DEPOTRB
+    AND (CONOUT.LB  <  :DEPOTLB or CONOUT.RB  >  :DEPOTRB)
+  INTO :INTAKE
+
+  DO
+
+  BEGIN
+    IF (INTAKE IS NULL) THEN
+      INTAKE = 0;
+  END
+  
+  /*Èùåì Âîçâðàò îò ïîêóïàòåëåé*/
+  FOR SELECT
+    SUM (M.DEBIT)
+  FROM
+    INV_CARD C
+      JOIN INV_MOVEMENT M ON C.ID  =  M.CARDKEY AND M.DISABLED = 0
+        AND M.MOVEMENTDATE <= :TODATE AND M.MOVEMENTDATE  >=  :FROMDATE AND M.debit > 0
+        AND C.GOODKEY  =  :GOODKEY AND (c.usr$inv_provider = :ProviderKey)  AND C.USR$COLORKEY = :COLORKEY
+      join GD_DOCUMENT doc ON doc.id = m.documentkey AND doc.documenttypekey = :customerbackdoc
+      JOIN INV_MOVEMENT MOUT ON M.movementkey = MOUT.movementkey AND M.id <> mout.id AND mout.credit > 0 AND MOUT.DISABLED = 0
+      LEFT JOIN GD_CONTACT CON ON M.CONTACTKEY  =  CON.ID
+      LEFT JOIN GD_CONTACT CONOUT ON MOUT.CONTACTKEY  =  CONOUT.ID
+  WHERE
+    CON.LB  >=  :DEPOTLB AND CON.RB  <=  :DEPOTRB
+    AND (CONOUT.LB  <  :DEPOTLB or CONOUT.RB  >  :DEPOTRB)
+  INTO :CUSTOMERBACK
+  
+  DO
+
+  BEGIN
+    IF (CUSTOMERBACK IS NULL) THEN
+      CUSTOMERBACK = 0;
+  END
+  
+  /*Èùåì ïðèõîä ïî èíâåíòàðèçàöèè*/
+  FOR SELECT
+    SUM (M.DEBIT)
+  FROM
+    INV_CARD C
+      JOIN INV_MOVEMENT M ON C.ID  =  M.CARDKEY AND M.DISABLED = 0
+        AND M.MOVEMENTDATE <= :TODATE AND M.MOVEMENTDATE  >=  :FROMDATE AND M.debit > 0
+        AND C.GOODKEY  =  :GOODKEY AND C.USR$COLORKEY = :COLORKEY
+        AND (c.usr$inv_provider = :ProviderKey)
+      JOIN GD_DOCUMENT DOC on doc.id = m.documentkey AND doc.documenttypekey = :INVENTDOC
+      LEFT JOIN GD_CONTACT CON ON M.CONTACTKEY  =  CON.ID
+  WHERE
+    CON.LB  >=  :DEPOTLB AND CON.RB  <=  :DEPOTRB
+  INTO :ININVENT
+  
+  DO
+  
+  BEGIN
+    IF (ININVENT IS NULL) THEN
+      ININVENT = 0;
+  END
+  
+  /*Èùåì ðàñõîä çà ïåðèîä*/
+  FOR SELECT
+    SUM (M.CREDIT)
+  FROM
+    INV_CARD C
+      JOIN INV_MOVEMENT M ON C.ID  =  M.CARDKEY AND M.DISABLED = 0
+        AND M.MOVEMENTDATE  <=  :TODATE AND M.MOVEMENTDATE  >=  :FROMDATE AND M.CREDIT > 0
+        AND C.GOODKEY  =  :GOODKEY AND C.USR$COLORKEY = :COLORKEY
+        AND (c.usr$inv_provider = :ProviderKey)
+      JOIN INV_MOVEMENT MOUT ON M.movementkey = MOUT.movementkey AND M.id <> mout.id AND mout.DEBIT > 0 AND MOUT.DISABLED = 0
+      LEFT JOIN GD_CONTACT CON ON M.CONTACTKEY  =  CON.ID
+      LEFT JOIN GD_CONTACT CONOUT ON MOUT.CONTACTKEY  =  CONOUT.ID
+  WHERE
+    CON.LB  >=  :DEPOTLB AND CON.RB  <=  :DEPOTRB
+    AND (CONOUT.LB  <  :DEPOTLB or CONOUT.RB  >  :DEPOTRB)
+  INTO :ALLOUTPAY
+
+  DO
+  
+  BEGIN
+    IF (ALLOUTPAY IS NULL) THEN
+      ALLOUTPAY = 0;
+  END
+  
+    /*Âîçâðàò ïîñòàâùèêó*/
+  FOR SELECT
+    SUM (M.CREDIT)
+   FROM
+    INV_CARD C
+      JOIN INV_MOVEMENT M ON C.ID  =  M.CARDKEY AND M.DISABLED = 0
+        AND M.MOVEMENTDATE  <=  :TODATE AND M.MOVEMENTDATE  >=  :FROMDATE AND M.CREDIT > 0
+        AND C.GOODKEY  =  :GOODKEY AND C.USR$COLORKEY = :COLORKEY
+        AND (c.usr$inv_provider = :ProviderKey)
+      JOIN gd_document doc on DOC.id = m.documentkey AND DOC.DOCUMENTTYPEKEY  = :PROVIDERBACKDOC
+      JOIN INV_MOVEMENT MOUT ON M.movementkey = MOUT.movementkey AND M.id <> mout.id AND mout.DEBIT > 0 AND MOUT.DISABLED = 0
+      LEFT JOIN GD_CONTACT CON ON M.CONTACTKEY  =  CON.ID
+      LEFT JOIN GD_CONTACT CONOUT ON MOUT.CONTACTKEY  =  CONOUT.ID
+   WHERE
+     CON.LB  >=  :DEPOTLB AND CON.RB  <=  :DEPOTRB
+     AND (CONOUT.LB  <  :DEPOTLB or CONOUT.RB  >  :DEPOTRB)
+   INTO :PROVIDERBACK
+   
+   DO
+   
+   BEGIN
+     IF (PROVIDERBACK IS NULL) THEN
+       PROVIDERBACK = 0;
+   END
+   
+  /*Èùåì ðàñõîä ïî èíâåíòàðèçàöèè*/
+  FOR SELECT
+    SUM (M.CREDIT)
+  FROM
+    INV_CARD C
+      JOIN INV_MOVEMENT M ON C.ID  =  M.CARDKEY AND M.DISABLED = 0
+        AND M.MOVEMENTDATE <= :TODATE AND M.MOVEMENTDATE  >=  :FROMDATE AND M.CREDIT > 0
+        AND C.GOODKEY  =  :GOODKEY AND C.USR$COLORKEY = :COLORKEY
+        AND (c.usr$inv_provider = :ProviderKey)
+      JOIN GD_DOCUMENT DOC on doc.id = m.documentkey AND doc.documenttypekey = :INVENTDOC
+      LEFT JOIN GD_CONTACT CON ON M.CONTACTKEY  =  CON.ID
+  WHERE
+    CON.LB  >=  :DEPOTLB AND CON.RB  <=  :DEPOTRB
+  INTO :OUTINVENT
+  
+  DO
+  
+  BEGIN
+    IF (OUTINVENT IS NULL) THEN
+      OUTINVENT = 0;
+  END
+  
+  /*Èùåì îñòàòîê íà êîíåö*/
+  EREMAINS = 0;
+  
+  FOR SELECT
+    SUM ( M.DEBIT - M.CREDIT )
+  FROM
+    INV_CARD C
+      JOIN INV_MOVEMENT M ON C.ID  =  M.CARDKEY AND M.DISABLED  =  0
+        AND M.MOVEMENTDATE  <=  :TODATE
+        AND C.GOODKEY  =  :GOODKEY AND C.USR$COLORKEY = :COLORKEY
+        AND (c.usr$inv_provider = :ProviderKey)
+      LEFT JOIN GD_CONTACT CON ON M.CONTACTKEY  =  CON.ID
+  WHERE
+    CON.LB  >=  :DEPOTLB AND CON.RB  <=  :DEPOTRB
+  HAVING
+    SUM ( M.DEBIT - M.CREDIT )  >  0
+  INTO :EREMAINS
+  
+  DO
+  
+  BEGIN
+  END
+
+  IF ((BREMAINS <> 0) OR (EREMAINS <> 0) OR (ALLOUTPAY <> 0) OR (INTAKE <> 0)
+  OR (ININVENT <> 0) OR (OUTINVENT <> 0) OR (PROVIDERBACK <> 0) OR (CUSTOMERBACK <> 0))
+  THEN
+    BEGIN
+      SELECT MIN(m.movementdate), max(m.movementdate)
+      FROM inv_movement m
+        JOIN inv_card c on m.cardkey = c.id  and C.GOODKEY  = :Goodkey
+          AND (c.usr$inv_provider = :ProviderKey or :ProviderKey = -1)
+        LEFT JOIN GD_CONTACT CON ON M.CONTACTKEY  =  CON.ID
+      WHERE CON.LB  >=  :DEPOTLB AND CON.RB  <=  :DEPOTRB
+  INTO :MINIVDATE,  :MAXINVDATE;
+    END
+
+  SUSPEND;
+
+  END
+END
